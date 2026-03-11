@@ -1,12 +1,17 @@
-import { stripHeartbeatToken } from "../heartbeat.js";
-import { HEARTBEAT_TOKEN, isSilentReplyText, SILENT_REPLY_TOKEN } from "../tokens.js";
-import type { ReplyPayload } from "../types.js";
 import { sanitizeUserFacingText } from "../../agents/pi-embedded-helpers.js";
+import { stripHeartbeatToken } from "../heartbeat.js";
+import {
+  HEARTBEAT_TOKEN,
+  isSilentReplyText,
+  SILENT_REPLY_TOKEN,
+  stripSilentToken,
+} from "../tokens.js";
+import type { ReplyPayload } from "../types.js";
+import { hasLineDirectives, parseLineDirectives } from "./line-directives.js";
 import {
   resolveResponsePrefixTemplate,
   type ResponsePrefixContext,
 } from "./response-prefix-template.js";
-import { hasLineDirectives, parseLineDirectives } from "./line-directives.js";
 
 export type NormalizeReplySkipReason = "empty" | "silent" | "heartbeat";
 
@@ -43,6 +48,16 @@ export function normalizeReplyPayload(
     }
     text = "";
   }
+  // Strip NO_REPLY from mixed-content messages (e.g. "😄 NO_REPLY") so the
+  // token never leaks to end users.  If stripping leaves nothing, treat it as
+  // silent just like the exact-match path above.  (#30916, #30955)
+  if (text && text.includes(silentToken) && !isSilentReplyText(text, silentToken)) {
+    text = stripSilentToken(text, silentToken);
+    if (!text && !hasMedia && !hasChannelData) {
+      opts.onSkip?.("silent");
+      return null;
+    }
+  }
   if (text && !trimmed) {
     // Keep empty text when media exists so media-only replies still send.
     text = "";
@@ -51,7 +66,9 @@ export function normalizeReplyPayload(
   const shouldStripHeartbeat = opts.stripHeartbeat ?? true;
   if (shouldStripHeartbeat && text?.includes(HEARTBEAT_TOKEN)) {
     const stripped = stripHeartbeatToken(text, { mode: "message" });
-    if (stripped.didStrip) opts.onHeartbeatStrip?.();
+    if (stripped.didStrip) {
+      opts.onHeartbeatStrip?.();
+    }
     if (stripped.shouldSkip && !hasMedia && !hasChannelData) {
       opts.onSkip?.("heartbeat");
       return null;
@@ -60,7 +77,7 @@ export function normalizeReplyPayload(
   }
 
   if (text) {
-    text = sanitizeUserFacingText(text);
+    text = sanitizeUserFacingText(text, { errorContext: Boolean(payload.isError) });
   }
   if (!text?.trim() && !hasMedia && !hasChannelData) {
     opts.onSkip?.("empty");

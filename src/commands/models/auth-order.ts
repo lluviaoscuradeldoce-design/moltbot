@@ -5,19 +5,19 @@ import {
   setAuthProfileOrder,
 } from "../../agents/auth-profiles.js";
 import { normalizeProviderId } from "../../agents/model-selection.js";
-import { loadConfig } from "../../config/config.js";
-import { normalizeAgentId } from "../../routing/session-key.js";
 import type { RuntimeEnv } from "../../runtime.js";
 import { shortenHomePath } from "../../utils.js";
+import { loadModelsConfig } from "./load-config.js";
+import { resolveKnownAgentId } from "./shared.js";
 
 function resolveTargetAgent(
-  cfg: ReturnType<typeof loadConfig>,
+  cfg: Awaited<ReturnType<typeof loadModelsConfig>>,
   raw?: string,
 ): {
   agentId: string;
   agentDir: string;
 } {
-  const agentId = raw?.trim() ? normalizeAgentId(raw.trim()) : resolveDefaultAgentId(cfg);
+  const agentId = resolveKnownAgentId({ cfg, rawAgentId: raw }) ?? resolveDefaultAgentId(cfg);
   const agentDir = resolveAgentDir(cfg, agentId);
   return { agentId, agentDir };
 }
@@ -28,16 +28,25 @@ function describeOrder(store: AuthProfileStore, provider: string): string[] {
   return Array.isArray(order) ? order : [];
 }
 
+async function resolveAuthOrderContext(
+  opts: { provider: string; agent?: string },
+  runtime: RuntimeEnv,
+) {
+  const rawProvider = opts.provider?.trim();
+  if (!rawProvider) {
+    throw new Error("Missing --provider.");
+  }
+  const provider = normalizeProviderId(rawProvider);
+  const cfg = await loadModelsConfig({ commandName: "models auth-order", runtime });
+  const { agentId, agentDir } = resolveTargetAgent(cfg, opts.agent);
+  return { cfg, agentId, agentDir, provider };
+}
+
 export async function modelsAuthOrderGetCommand(
   opts: { provider: string; agent?: string; json?: boolean },
   runtime: RuntimeEnv,
 ) {
-  const rawProvider = opts.provider?.trim();
-  if (!rawProvider) throw new Error("Missing --provider.");
-  const provider = normalizeProviderId(rawProvider);
-
-  const cfg = loadConfig();
-  const { agentId, agentDir } = resolveTargetAgent(cfg, opts.agent);
+  const { agentId, agentDir, provider } = await resolveAuthOrderContext(opts, runtime);
   const store = ensureAuthProfileStore(agentDir, {
     allowKeychainPrompt: false,
   });
@@ -70,18 +79,15 @@ export async function modelsAuthOrderClearCommand(
   opts: { provider: string; agent?: string },
   runtime: RuntimeEnv,
 ) {
-  const rawProvider = opts.provider?.trim();
-  if (!rawProvider) throw new Error("Missing --provider.");
-  const provider = normalizeProviderId(rawProvider);
-
-  const cfg = loadConfig();
-  const { agentId, agentDir } = resolveTargetAgent(cfg, opts.agent);
+  const { agentId, agentDir, provider } = await resolveAuthOrderContext(opts, runtime);
   const updated = await setAuthProfileOrder({
     agentDir,
     provider,
     order: null,
   });
-  if (!updated) throw new Error("Failed to update auth-profiles.json (lock busy?).");
+  if (!updated) {
+    throw new Error("Failed to update auth-profiles.json (lock busy?).");
+  }
 
   runtime.log(`Agent: ${agentId}`);
   runtime.log(`Provider: ${provider}`);
@@ -92,17 +98,12 @@ export async function modelsAuthOrderSetCommand(
   opts: { provider: string; agent?: string; order: string[] },
   runtime: RuntimeEnv,
 ) {
-  const rawProvider = opts.provider?.trim();
-  if (!rawProvider) throw new Error("Missing --provider.");
-  const provider = normalizeProviderId(rawProvider);
-
-  const cfg = loadConfig();
-  const { agentId, agentDir } = resolveTargetAgent(cfg, opts.agent);
+  const { agentId, agentDir, provider } = await resolveAuthOrderContext(opts, runtime);
 
   const store = ensureAuthProfileStore(agentDir, {
     allowKeychainPrompt: false,
   });
-  const providerKey = normalizeProviderId(provider);
+  const providerKey = provider;
   const requested = (opts.order ?? []).map((entry) => String(entry).trim()).filter(Boolean);
   if (requested.length === 0) {
     throw new Error("Missing profile ids. Provide one or more profile ids.");
@@ -123,7 +124,9 @@ export async function modelsAuthOrderSetCommand(
     provider,
     order: requested,
   });
-  if (!updated) throw new Error("Failed to update auth-profiles.json (lock busy?).");
+  if (!updated) {
+    throw new Error("Failed to update auth-profiles.json (lock busy?).");
+  }
 
   runtime.log(`Agent: ${agentId}`);
   runtime.log(`Provider: ${provider}`);

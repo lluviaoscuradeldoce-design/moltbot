@@ -1,29 +1,44 @@
 # Changelog
 
-## 2026.1.29
+## 2026.3.2
 
 ### Changes
-- Version alignment with core Moltbot release numbers.
 
-## 2026.1.23
+- Rebuilt the plugin to use native `zca-js` integration inside OpenClaw (no external `zca` CLI runtime dependency).
 
-### Changes
-- Version alignment with core Moltbot release numbers.
+### Breaking
 
-## 2026.1.22
+- **BREAKING:** Removed the old external CLI-based backend (`zca`/`openzca`/`zca-cli`) from runtime flow. Existing setups that depended on external CLI binaries should re-login with `openclaw channels login --channel zalouser` after upgrading.
 
-### Changes
-- Version alignment with core Moltbot release numbers.
-
-## 2026.1.21
+## 2026.3.1
 
 ### Changes
-- Version alignment with core Moltbot release numbers.
 
-## 2026.1.20
+- Version alignment with core OpenClaw release numbers.
+
+## 2026.2.26
 
 ### Changes
-- Version alignment with core Moltbot release numbers.
+
+- Version alignment with core OpenClaw release numbers.
+
+## 2026.2.25
+
+### Changes
+
+- Version alignment with core OpenClaw release numbers.
+
+## 2026.2.24
+
+### Changes
+
+- Version alignment with core OpenClaw release numbers.
+
+## 2026.2.22
+
+### Changes
+
+- Version alignment with core OpenClaw release numbers.
 
 ## 2026.1.17-1
 
